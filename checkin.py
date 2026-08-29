@@ -252,11 +252,7 @@ def main():
     # Step 3: 检查签到状态
     print("[3/4] 检查签到状态...")
     if check_already_signed(html):
-        print("[OK] 今日已签到，无需重复操作")
-        send_notification(
-            f"[签到成功] {mode}",
-            f"时间: {now}\n模式: {mode}\n状态: 今日已签到",
-        )
+        print("[OK] 今日已签到，无需重复操作（成功不推送）")
         sys.exit(0)
     print("  -> 今日尚未签到")
 
@@ -277,11 +273,7 @@ def main():
     success, message = parse_result(text)
 
     if success:
-        print(f"[OK] {message}")
-        send_notification(
-            f"[签到成功] {mode}",
-            f"时间: {now}\n模式: {mode}\n结果: {message}",
-        )
+        print(f"[OK] {message}（成功不推送）")
     else:
         print(f"[FAIL] {message}")
         send_notification(
