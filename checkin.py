@@ -3,7 +3,7 @@
 福利吧论坛 (wnflb2023.com) 自动签到脚本
 - 使用 Cookies 认证，无需浏览器
 - 自动检测登录状态和签到状态
-- 支持 PushPlus / Server酱 微信推送通知
+- 仅签到失败时通过 PushPlus 推送微信通知（成功/已签到不打扰）
 - 早上9点签到 + 晚上10点复查
 """
 
@@ -86,18 +86,16 @@ def get_page_text(resp):
 
 def check_logged_in(html):
     """检测是否已登录"""
-    # 登录标志
     logged_signs = [
         'class="logout"',
         "退出</a>",
         "退出登录",
         "mod=logging&action=logout",
-        "fx_checkin",  # 签到插件只有登录后显示
+        "fx_checkin",
     ]
     if any(s in html for s in logged_signs):
         return True
 
-    # 明确未登录标志
     not_logged_signs = [
         'name="username"',
         'name="password"',
@@ -106,7 +104,7 @@ def check_logged_in(html):
     if any(s in html for s in not_logged_signs):
         return False
 
-    return True  # 默认假设已登录
+    return True
 
 
 def check_already_signed(html):
@@ -153,11 +151,9 @@ def parse_result(text):
     if text is None:
         return False, "网络请求失败"
 
-    # 检查 CDATA
     cdata_match = re.search(r"<!\[CDATA\[(.*?)\]\]>", text, re.DOTALL)
     content = cdata_match.group(1) if cdata_match else text
 
-    # 去除 HTML 标签
     clean = re.sub(r"<[^>]+>", " ", content).strip()
     clean = re.sub(r"\s+", " ", clean)
 
@@ -179,34 +175,34 @@ def parse_result(text):
     return False, f"未知响应: {clean[:200]}"
 
 
-def send_notification(title, content):
-    """发送微信通知"""
+# ========== 推送（仅失败时调用） ==========
+
+def send_pushplus(title, content):
+    """通过 PushPlus 推送微信通知；只在签到失败时调用"""
     token = os.environ.get("PUSHPLUS_TOKEN", "")
-    if token:
-        try:
-            resp = requests.post(
-                "http://www.pushplus.plus/send",
-                json={"token": token, "title": title, "content": content, "template": "txt"},
-                timeout=10,
-            )
-            print(f"  [PushPlus] {resp.json().get('msg', 'unknown')}")
-        except Exception as e:
-            print(f"  [PushPlus] 发送失败: {e}")
+    if not token:
+        print("  [PushPlus] 未配置 PUSHPLUS_TOKEN，跳过推送")
+        return
+    try:
+        resp = requests.post(
+            "https://www.pushplus.plus/send",
+            json={"token": token, "title": title, "content": content, "template": "txt"},
+            timeout=15,
+        )
+        result = resp.json()
+        if result.get("code") == 200:
+            print("  [PushPlus] 推送成功")
+        else:
+            print(f"  [PushPlus] 推送返回异常: {result}")
+    except Exception as e:
+        print(f"  [PushPlus] 推送失败: {e}")
 
-    key = os.environ.get("SERVERCHAN_KEY", "")
-    if key:
-        try:
-            resp = requests.post(
-                f"https://sctapi.ftqq.com/{key}.send",
-                data={"title": title, "desp": content},
-                timeout=10,
-            )
-            print(f"  [Server酱] {resp.json().get('message', 'unknown')}")
-        except Exception as e:
-            print(f"  [Server酱] 发送失败: {e}")
 
-    if not token and not key:
-        print("  (未配置推送通知)")
+def fail_and_notify(title, reason, now, mode):
+    """统一失败出口：打印日志 + PushPlus 推送 + 非零退出"""
+    print(f"[FAIL] {reason}")
+    send_pushplus(title, f"时间: {now}\n模式: {mode}\n错误: {reason}")
+    sys.exit(1)
 
 
 # ========== 主流程 ==========
@@ -224,8 +220,7 @@ def main():
     print()
 
     if not cookie_str:
-        print("[FATAL] 未设置 FORUM_COOKIE 环境变量")
-        sys.exit(1)
+        fail_and_notify("[签到失败] 配置缺失", "未设置 FORUM_COOKIE 环境变量", now, mode)
 
     # Step 1: 创建会话
     print("[1/4] 创建会话并访问论坛...")
@@ -233,20 +228,19 @@ def main():
     resp = fetch_forum(session)
 
     if resp is None:
-        msg = "访问论坛失败（网络错误）"
-        print(f"[FAIL] {msg}")
-        send_notification(f"[签到失败] {mode}", f"时间: {now}\n模式: {mode}\n错误: {msg}")
-        sys.exit(1)
+        fail_and_notify("[签到失败] 网络错误", "访问论坛失败（网络错误）", now, mode)
 
     html = get_page_text(resp)
 
     # Step 2: 检查登录
     print("[2/4] 检查登录状态...")
     if not check_logged_in(html):
-        msg = "Cookie 已过期，请重新获取并更新 GitHub Secrets"
-        print(f"[FAIL] {msg}")
-        send_notification(f"[签到失败] Cookie过期", f"时间: {now}\n模式: {mode}\n错误: {msg}")
-        sys.exit(1)
+        fail_and_notify(
+            "[签到失败] Cookie过期",
+            "Cookie 已过期，请重新获取并更新 GitHub Secrets",
+            now,
+            mode,
+        )
     print("  -> 登录状态正常")
 
     # Step 3: 检查签到状态
@@ -261,10 +255,12 @@ def main():
     formhash, fx_formhash = extract_formhash(html)
 
     if not formhash:
-        msg = "无法提取 formhash，页面结构可能已变化"
-        print(f"[FAIL] {msg}")
-        send_notification(f"[签到失败] {mode}", f"时间: {now}\n模式: {mode}\n错误: {msg}")
-        sys.exit(1)
+        fail_and_notify(
+            "[签到失败] 页面异常",
+            "无法提取 formhash，页面结构可能已变化",
+            now,
+            mode,
+        )
 
     print(f"  -> formhash: {formhash}")
     print(f"  -> fx_formhash: {fx_formhash}")
@@ -275,13 +271,19 @@ def main():
     if success:
         print(f"[OK] {message}（成功不推送）")
     else:
-        print(f"[FAIL] {message}")
-        send_notification(
-            f"[签到失败] {mode}",
-            f"时间: {now}\n模式: {mode}\n结果: {message}",
-        )
-        sys.exit(1)
+        fail_and_notify("[签到失败] 签到未成功", message, now, mode)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        # 任何未捕获异常也推送，避免失败静默
+        now = get_cst_time()
+        mode = os.environ.get("CHECKIN_MODE", "checkin")
+        detail = f"{type(e).__name__}: {e}"
+        print(f"[FATAL] 脚本异常: {detail}")
+        send_pushplus("[签到失败] 脚本异常", f"时间: {now}\n模式: {mode}\n错误: {detail}")
+        sys.exit(1)

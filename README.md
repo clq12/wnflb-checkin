@@ -1,7 +1,7 @@
 [README.md](https://github.com/user-attachments/files/30833138/README.md)
 # 福利吧论坛自动签到
 
-利用 GitHub Actions 在云端定时执行签到，**无需开电脑**，每天自动签到 + 晚间复查，支持微信推送通知。
+利用 GitHub Actions 在云端定时执行签到，**无需开电脑**，每天自动签到 + 晚间复查，签到失败时微信推送提醒。
 
 ## 工作原理
 
@@ -10,7 +10,7 @@ GitHub Actions 云服务器
   ├── 每天 09:00 → 自动签到（已签则跳过）
   └── 每天 22:00 → 复查签到状态（没签成功则补签）
          │
-         └── 结果推送到微信（可选）
+         └── 失败时推送微信（成功不打扰）
 ```
 
 你的电脑全程不需要开机，所有操作都在 GitHub 的免费云服务器上完成。
@@ -120,9 +120,8 @@ Cookie 等敏感信息不能写在代码里，需要存储在 GitHub 的加密 S
 |------|-------|----------|
 | `FORUM_COOKIE` | 第一步复制的完整 Cookie 字符串 | **必填** |
 | `PUSHPLUS_TOKEN` | PushPlus 的 token（见第六步） | 可选 |
-| `SERVERCHAN_KEY` | Server酱 的 SendKey | 可选 |
 
-至少要配置 `FORUM_COOKIE`，推送通知是可选的。
+`FORUM_COOKIE` 必填；`PUSHPLUS_TOKEN` 用于失败提醒，建议配置。
 
 ### 第五步：测试运行
 
@@ -132,9 +131,9 @@ Cookie 等敏感信息不能写在代码里，需要存储在 GitHub 的加密 S
 4. 等待约 1 分钟，点击运行记录查看日志
 5. 看到 `[OK] 今日已签到` 或 `[OK] 签到成功` 即表示部署成功
 
-### 第六步：配置微信推送通知（可选）
+### 第六步：配置失败提醒（可选）
 
-配置后，每天签到结果会自动推送到微信。
+配置后，**仅在签到失败时**推送微信提醒；签到成功或今日已签到不会打扰你。
 
 **使用 PushPlus（推荐）：**
 
@@ -147,13 +146,7 @@ Cookie 等敏感信息不能写在代码里，需要存储在 GitHub 的加密 S
    - **Value**：粘贴你的 token
 6. 点 **Add secret**
 
-**使用 Server酱（备选）：**
-
-1. 访问 [sct.ftqq.com](https://sct.ftqq.com)，微信扫码登录
-2. 复制 SendKey
-3. 同样添加到 GitHub Secrets，Name 填 `SERVERCHAN_KEY`
-
-配置完成后手动运行一次 workflow，微信收到推送即表示配成功。
+配置完成后手动运行一次 workflow：若签到成功则不会推送（属正常）；可临时把 `FORUM_COOKIE` 改成错误值触发一次失败来验证推送。
 
 ## 定时任务说明
 
