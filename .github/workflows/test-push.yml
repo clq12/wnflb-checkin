@@ -1,0 +1,31 @@
+name: PushPlus 推送测试（临时）
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: pip install requests
+
+      - name: 发送测试推送
+        env:
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+        run: |
+          python -c "
+          import checkin
+          checkin.send_pushplus('[福利吧签到] PushPlus 推送测试', '时间: 测试\n这是一条测试消息。\n收到即表示失败提醒通道正常，签到失败时你会收到类似格式的提醒。')
+          "
